@@ -1,0 +1,12 @@
+[package]
+name = "vizsink"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.8", features = ["ws"] }
+clap = { version = "4.5.54", features = ["derive"] }
+color-eyre = "0.6.5"
+futures-util = "0.3.31"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.49.0", features = ["full"] }

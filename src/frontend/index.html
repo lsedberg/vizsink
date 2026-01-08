@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+
+<head>
+    <title>VizSink</title>
+</head>
+
+<body>
+    <h1>VizSink</h1>
+</body>
+
+<script>
+    let ws = new WebSocket("ws://localhost:8080/ws") // TODO: Do not hardcode URL.
+
+    ws.onopen = () => {
+        console.log("Connected to VizSink server");
+    };
+
+    ws.onclose = () => {
+        console.log("Disconnected from VizSink server");
+    };
+
+    ws.onmessage = (event) => {
+        console.log("Received data:", event.data);
+    };
+</script>
