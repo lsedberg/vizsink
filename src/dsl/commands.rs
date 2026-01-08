@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::utils::color;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Op {
     Grid { width: u32, height: u32 },
     Cell { x: u32, y: u32 },

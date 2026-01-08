@@ -1064,6 +1064,7 @@ dependencies = [
  "color-eyre",
  "futures-util",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

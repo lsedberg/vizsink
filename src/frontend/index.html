@@ -1,25 +1,72 @@
 <!DOCTYPE html>
 
 <head>
-    <title>VizSink</title>
+  <title>VizSink</title>
 </head>
 
 <body>
-    <h1>VizSink</h1>
+  <h1>VizSink</h1>
+  <p id="ws-status"></p>
 </body>
 
+<button onclick="reconnect()">Reconnect</button>
+
 <script>
-    let ws = new WebSocket("ws://localhost:8080/ws") // TODO: Do not hardcode URL.
+  const WS_URL = (() => {
+    const loc = window.location;
+    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${loc.host}/ws`;
+  })();
+
+  let ws = null;
+  // TODO: Implement auto-reconnect.
+  // let reconnectAttempts = 0;
+  // let pingInterval = null;
+  // let heartbeatTimeout = null;
+
+  function logStatus(text) {
+    document.getElementById("ws-status").innerText = text;
+    console.log(text);
+  }
+
+  function connect() {
+    console.log("Connecting to server...");
+    ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-        console.log("Connected to VizSink server");
+      console.log("Connected to server");
+      document.getElementById("ws-status").innerText = "Connected";
     };
 
     ws.onclose = () => {
-        console.log("Disconnected from VizSink server");
+      console.log("Disconnected from server");
+      document.getElementById("ws-status").innerText = "Disconnected";
     };
 
     ws.onmessage = (event) => {
-        console.log("Received data:", event.data);
+      console.log("Received data:", event.data);
     };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+  }
+
+  function reconnect() {
+    console.log("Reconnecting to server...");
+    reconnectAttempts = 0;
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
+    ) {
+      try {
+        ws.close();
+      } catch {}
+    }
+
+    connect();
+  }
+
+  connect();
 </script>
