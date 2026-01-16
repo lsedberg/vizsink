@@ -10,10 +10,18 @@ use axum::{
     response::IntoResponse,
     routing::{get, get_service},
 };
+use clap::Parser;
 use color_eyre::eyre::Result;
 use tokio::io::{self, AsyncBufReadExt};
 use tokio::sync::broadcast;
 use tower_http::services::ServeDir;
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[arg(long, default_value_t = 8080)]
+    port: u16,
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -22,6 +30,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
     let (tx, _) = broadcast::channel::<String>(1024);
 
     // stdin reader task
@@ -48,7 +57,7 @@ async fn main() -> Result<()> {
         .fallback(static_service)
         .with_state(AppState { tx });
 
-    let addr = format!("127.0.0.1:{}", 3000);
+    let addr = format!("127.0.0.1:{}", cli.port);
     let listener = tokio::net::TcpListener::bind(addr.clone())
         .await
         .expect(format!("Could not create a listener at: {}", addr).as_str());

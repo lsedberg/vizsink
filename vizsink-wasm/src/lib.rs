@@ -5,8 +5,14 @@ use web_sys::{MessageEvent, WebSocket, console};
 
 #[wasm_bindgen(start)]
 pub fn start() {
-    // TODO: make this dynamic
-    let ws = WebSocket::new("ws://localhost:3000/ws").unwrap();
+    let window = web_sys::window().expect("should have a window in this context");
+
+    let location = window.location();
+    let ws_url = format!(
+        "ws://{}/ws",
+        &location.host().expect("window should have a host location")
+    );
+    let ws = WebSocket::new(&ws_url).unwrap();
 
     console::log_1(&"Listening!".into());
 
