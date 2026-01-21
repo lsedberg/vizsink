@@ -1,3 +1,3 @@
-mod ast;
+pub mod ast;
 pub mod parser;
-mod tokens;
+pub mod tokens;
