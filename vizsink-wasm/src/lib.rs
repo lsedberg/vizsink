@@ -13,6 +13,12 @@ mod utils;
 #[wasm_bindgen(start)]
 pub fn start() {
     let window = web_sys::window().expect("should have a window in this context");
+    let document = window
+        .document()
+        .expect("should have a document in this window");
+    let status_el = document
+        .get_element_by_id("connection-status")
+        .expect("no status element");
 
     let location = window.location();
     let ws_url = format!(
@@ -36,22 +42,38 @@ pub fn start() {
 
     ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
 
-    let onopen = Closure::<dyn FnMut(Event)>::new(move |_| {
-        console_info!("Connected");
-    });
+    let onopen = {
+        let status_el = status_el.clone();
+        Closure::<dyn FnMut(Event)>::new(move |_| {
+            status_el.set_inner_html("Connected");
+            console_info!("Connected");
+        })
+    };
 
     ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
 
-    onmessage.forget(); // keep alive
-    onopen.forget(); // keep alive
+    let onclose = {
+        let status_el = status_el.clone();
+
+        Closure::<dyn FnMut(Event)>::new(move |_| {
+            status_el.set_inner_html("No Connection");
+            console_error!("Connection lost");
+        })
+    };
+
+    ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
+
+    // keep alive
+    onmessage.forget();
+    onopen.forget();
+    onclose.forget();
 }
 
 fn execute_command(node: ASTNode) {
     match node {
         ASTNode::Frame(frame) => execute_frame(frame),
         ASTNode::Error(error) => execute_error(error),
-        // _ => {},
-        _ => todo!("Unhandled"),
+        _ => console_error!("Unhandled Command"),
     }
 }
 

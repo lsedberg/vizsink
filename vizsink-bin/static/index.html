@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -8,11 +8,17 @@
   </head>
   <body>
     <h1>VizSink</h1>
+    <p>Status: <span id="connection-status">Disconnected</span></p>
+    <button id="connect-btn">Refresh Page</button>
     <script type="module">
       import init from "./pkg/vizsink_wasm.js";
       async function run() {
         await init();
       }
+
+      document.getElementById("connect-btn").addEventListener("click", () => {
+        window.location.reload();
+      });
 
       run();
     </script>
