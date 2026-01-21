@@ -1,3 +1,5 @@
+//! Tokens
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Word(String),
@@ -9,6 +11,9 @@ pub enum Token {
     Equal,
 }
 
+/// Takes a raw string and splits it into a vector of [`Token`]s.
+///
+/// These tokens are an intermediate step, before being further passed into the parser.
 pub fn tokenizer(line: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 

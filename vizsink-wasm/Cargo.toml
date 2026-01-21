@@ -8,5 +8,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2.108"
-web-sys = { version = "0.3.85", features = ["Document", "Element", "Location", "MessageEvent", "WebSocket", "Window", "console"] }
+web-sys = { version = "0.3.85", features = ["CanvasRenderingContext2d", "Document", "Element", "HtmlCanvasElement", "Location", "MessageEvent", "WebSocket", "Window", "console"] }
 vizsink-core = { path = "../vizsink-core" }

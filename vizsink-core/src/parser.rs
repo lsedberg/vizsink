@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{
-    ast::{self, ASTNode, Angle, CanvasNode, ErrorNode, FrameNode, LayerNode},
+    ast::{self, ASTNode, Angle, CanvasNode, ErrorNode, Float, FrameNode, LayerNode},
     tokens::{Token, tokenizer},
 };
 
@@ -83,14 +83,14 @@ fn parse_frame(tokens: Vec<Token>) -> Vec<ASTNode> {
 
     match subcommand.as_str() {
         "set" => {
-            let x = match parse_required::<f32>(&params, "x") {
+            let x = match parse_required::<Float>(&params, "x") {
                 Ok(v) => v,
                 Err(e) => {
                     ast::push_err(&mut nodes, format!("frame set {}: {}", name, e));
                     return nodes;
                 }
             };
-            let y = match parse_required::<f32>(&params, "y") {
+            let y = match parse_required::<Float>(&params, "y") {
                 Ok(v) => v,
                 Err(e) => {
                     ast::push_err(&mut nodes, format!("frame set {}: {}", name, e));
@@ -158,7 +158,101 @@ fn parse_entity(tokens: Vec<Token>) -> Vec<ASTNode> {
 }
 
 fn parse_draw(tokens: Vec<Token>) -> Vec<ASTNode> {
-    todo!();
+    let mut nodes = vec![];
+    let mut it = tokens.into_iter();
+
+    if let Some(Token::Word(id)) = it.next() {
+        // Send off the remaining tokens.
+        let tokens: Vec<Token> = it.collect();
+        let mut draw_commands = match id.as_str() {
+            "line" => parse_primitive_line(tokens),
+            "circle" => parse_primitive_circle(tokens),
+            // "rectangle" => parse_primitive_rectangle(),
+            // "polygon" => parse_primitive_polygon(),
+            s => parse_draw_shape(s, tokens),
+        };
+
+        nodes.append(&mut draw_commands);
+    } else {
+        ast::push_err(&mut nodes, "draw: missing name of shape or primitive");
+    }
+
+    nodes
+}
+
+fn parse_primitive_line(tokens: Vec<Token>) -> Vec<ASTNode> {
+    let mut nodes = vec![];
+
+    let params = parse_params(tokens);
+
+    let x1 = match parse_required::<Float>(&params, "x1") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let y1 = match parse_required::<Float>(&params, "y1") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let x2 = match parse_required::<Float>(&params, "x2") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let y2 = match parse_required::<Float>(&params, "y2") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let color = match parse_optional::<String>(&params, "color") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let thickness = match parse_optional::<Float>(&params, "thickness") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    nodes.push(ASTNode::Draw(ast::DrawNode::Primitive(
+        ast::Primitive::Line {
+            x1,
+            y1,
+            x2,
+            y2,
+            color,
+            thickness,
+        },
+    )));
+
+    nodes
+}
+
+fn parse_primitive_circle(tokens: Vec<Token>) -> Vec<ASTNode> {
+    todo!()
+}
+
+fn parse_draw_shape(name: &str, tokens: Vec<Token>) -> Vec<ASTNode> {
+    todo!()
 }
 
 fn parse_params(tokens: Vec<Token>) -> Params {

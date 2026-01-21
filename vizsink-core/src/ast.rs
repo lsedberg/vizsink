@@ -14,8 +14,8 @@ pub enum ASTNode {
 pub enum FrameNode {
     Set {
         name: String,
-        x: f32,
-        y: f32,
+        x: Float,
+        y: Float,
         yaw: Angle,
         parent: Option<String>,
     },
@@ -45,15 +45,15 @@ pub enum EntityNode {
     Create {
         name: String,
         shape: String,
-        x: f32,
-        y: f32,
-        angle: Option<f32>,
+        x: Float,
+        y: Float,
+        angle: Option<Float>,
     },
     Move {
         name: String,
-        x: f32,
-        y: f32,
-        angle: Option<f32>,
+        x: Float,
+        y: Float,
+        angle: Option<Float>,
     },
 }
 
@@ -63,48 +63,50 @@ pub enum DrawNode {
     Shape(String),
 }
 
+pub type Float = f64;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primitive {
     Line {
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
         color: Option<String>,
-        thickness: Option<f32>,
+        thickness: Option<Float>,
     },
     Circle {
-        x: f32,
-        y: f32,
-        r: f32,
+        x: Float,
+        y: Float,
+        r: Float,
         color: Option<String>,
-        thickness: Option<f32>,
+        thickness: Option<Float>,
     },
     Rectangle {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
+        x: Float,
+        y: Float,
+        w: Float,
+        h: Float,
         color: Option<String>,
-        thickness: Option<f32>,
+        thickness: Option<Float>,
     },
     Polygon {
-        points: Vec<(f32, f32)>,
+        points: Vec<(Float, Float)>,
         color: Option<String>,
-        thickness: Option<f32>,
+        thickness: Option<Float>,
     },
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Angle {
-    radians: f32,
+    radians: Float,
 }
 
 impl Angle {
-    pub fn radians(&self) -> f32 {
+    pub fn radians(&self) -> Float {
         self.radians
     }
-    pub fn degrees(&self) -> f32 {
+    pub fn degrees(&self) -> Float {
         self.radians.to_degrees()
     }
 }
@@ -115,7 +117,7 @@ impl std::str::FromStr for Angle {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
         if let Some(num) = s.strip_suffix("deg") {
-            let v: f32 = num
+            let v: Float = num
                 .trim()
                 .parse()
                 .map_err(|e: std::num::ParseFloatError| e.to_string())?;
@@ -123,7 +125,7 @@ impl std::str::FromStr for Angle {
                 radians: v.to_radians(),
             })
         } else if let Some(num) = s.strip_suffix("rad") {
-            let v: f32 = num
+            let v: Float = num
                 .trim()
                 .parse()
                 .map_err(|e: std::num::ParseFloatError| e.to_string())?;

@@ -9,6 +9,9 @@
   <body>
     <h1>VizSink</h1>
     <p>Status: <span id="connection-status">Disconnected</span></p>
+    <div>
+      <canvas id="canvas-main" width="400px" height="600px"></canvas>
+    </div>
     <button id="connect-btn">Refresh Page</button>
     <script type="module">
       import init from "./pkg/vizsink_wasm.js";
