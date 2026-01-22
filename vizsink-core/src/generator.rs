@@ -8,8 +8,17 @@ pub type Number = f64;
 const DEFAULT_STROKE_COLOR: &str = "black";
 const DEFAULT_STROKE_WIDTH: Number = 0.10; // in natural units
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Command {
+    /// Render commands are rerun in order every time the scene rerenders.
+    Render(RenderCommand),
+
+    /// Effects are triggered once upon receiving the command.
+    Effect(EffectCommand),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum RenderCommand {
     /// Initiates a stroke.
     ///
     /// Calls `ctx.stroke()`
@@ -61,6 +70,25 @@ pub enum Command {
     /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lineTo)
     LineTo(Point2D),
 
+    /// Saves the state of the canvas by pushing the current state onto a stack.
+    /// Used together with [`RenderCommand::Restore`]
+    ///
+    /// Calls `ctx.save()`
+    ///
+    /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/save)
+    Save,
+
+    /// Restores the most recently saved canvas state by popping the top of the state stack.
+    /// Used together with [`RenderCommand::Save`]
+    ///
+    /// Calls `ctx.restore()`
+    ///
+    /// [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/restore)
+    Restore,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum EffectCommand {
     /// Console logs to the browser console.
     ///
     /// Calls `console.log()`
@@ -154,12 +182,14 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                         };
 
                         commands.append(&mut vec![
-                            Command::BeginPath,
-                            Command::StrokeStyle(color),
-                            Command::LineWidth(thickness),
-                            Command::MoveTo(line_start_world),
-                            Command::LineTo(line_end_world),
-                            Command::Stroke,
+                            Command::Render(RenderCommand::Save),
+                            Command::Render(RenderCommand::BeginPath),
+                            Command::Render(RenderCommand::StrokeStyle(color)),
+                            Command::Render(RenderCommand::LineWidth(thickness)),
+                            Command::Render(RenderCommand::MoveTo(line_start_world)),
+                            Command::Render(RenderCommand::LineTo(line_end_world)),
+                            Command::Render(RenderCommand::Stroke),
+                            Command::Render(RenderCommand::Restore),
                         ]);
                     }
                     ast::Primitive::Circle {
@@ -185,9 +215,9 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                 },
                 ast::DrawNode::Shape(_) => todo!(),
             },
-            ASTNode::Error(error_node) => {
-                commands.push(Command::ConsoleError(format!("{:?}", error_node)))
-            }
+            ASTNode::Error(error_node) => commands.push(Command::Effect(
+                EffectCommand::ConsoleError(format!("{:?}", error_node)),
+            )),
             ASTNode::Nop => todo!(),
         }
     }
@@ -213,12 +243,12 @@ fn test_generation() {
     assert_eq!(
         commands,
         vec![
-            Command::BeginPath,
-            Command::StrokeStyle("red".to_string()),
-            Command::LineWidth(4.0),
-            Command::MoveTo(Point2D { x: 1.0, y: 2.0 }),
-            Command::LineTo(Point2D { x: 3.0, y: 4.0 }),
-            Command::Stroke,
+            Command::Render(RenderCommand::BeginPath),
+            Command::Render(RenderCommand::StrokeStyle("red".to_string())),
+            Command::Render(RenderCommand::LineWidth(4.0)),
+            Command::Render(RenderCommand::MoveTo(Point2D { x: 1.0, y: 2.0 })),
+            Command::Render(RenderCommand::LineTo(Point2D { x: 3.0, y: 4.0 })),
+            Command::Render(RenderCommand::Stroke),
         ]
     );
 }

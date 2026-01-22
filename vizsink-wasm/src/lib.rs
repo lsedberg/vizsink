@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use vizsink_core::generator;
 use vizsink_core::generator::Command;
+use vizsink_core::generator::EffectCommand;
 use vizsink_core::generator::Point2D;
+use vizsink_core::generator::RenderCommand;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
@@ -36,7 +38,6 @@ struct AppState {
     last_pointer: Option<Point2D>,
 
     // scene / command buffer
-    // TODO: separate between draw commands that must be redrawn, and other more persistent commands such as console logs.
     commands: Vec<Command>,
     /// dirty indicates we need to redraw
     dirty: bool,
@@ -82,32 +83,47 @@ fn draw_scene_locked(app: &mut AppState) {
     // draw background
     draw_grid(app);
 
-    // replay all commands
+    // replay all draw commands
     for command in &app.commands {
         match command {
-            Command::Stroke => app.ctx.stroke(),
-            Command::LineWidth(width) => {
-                let px = app.camera.world_length_to_pixels(*width);
-                app.ctx.set_line_width(px);
-            }
-            Command::StrokeStyle(style) => app.ctx.set_stroke_style_str(style.as_str()),
-            Command::BeginPath => app.ctx.begin_path(),
-            Command::ClosePath => app.ctx.close_path(),
-            Command::MoveTo(point2d) => {
-                let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
-                app.ctx.move_to(point_px.x, point_px.y);
-            }
-            Command::LineTo(point2d) => {
-                let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
-                app.ctx.line_to(point_px.x, point_px.y);
-            }
-            Command::ConsoleLog(msg) => console_log!(msg),
-            Command::ConsoleError(msg) => console_error!(msg),
-            Command::ConsoleWarn(msg) => console_warn!(msg),
+            Command::Render(draw_command) => match draw_command {
+                RenderCommand::Stroke => app.ctx.stroke(),
+                RenderCommand::LineWidth(width) => {
+                    let px = app.camera.world_length_to_pixels(*width);
+                    app.ctx.set_line_width(px);
+                }
+                RenderCommand::StrokeStyle(style) => app.ctx.set_stroke_style_str(style.as_str()),
+                RenderCommand::BeginPath => app.ctx.begin_path(),
+                RenderCommand::ClosePath => app.ctx.close_path(),
+                RenderCommand::MoveTo(point2d) => {
+                    let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
+                    app.ctx.move_to(point_px.x, point_px.y);
+                }
+                RenderCommand::LineTo(point2d) => {
+                    let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
+                    app.ctx.line_to(point_px.x, point_px.y);
+                }
+                RenderCommand::Save => app.ctx.save(),
+                RenderCommand::Restore => app.ctx.restore(),
+            },
+            Command::Effect(_) => {}
         }
     }
 
     app.dirty = false;
+}
+
+fn execute_commands(commands: Vec<Command>) {
+    for command in commands {
+        match command {
+            Command::Render(_) => {}
+            Command::Effect(other_command) => match other_command {
+                EffectCommand::ConsoleLog(msg) => console_log!(msg),
+                EffectCommand::ConsoleError(msg) => console_error!(msg),
+                EffectCommand::ConsoleWarn(msg) => console_warn!(msg),
+            },
+        }
+    }
 }
 
 fn draw_scene() {
@@ -134,6 +150,7 @@ fn setup_ws(app_handle: AppHandle, ws_url: String) {
         if let Some(txt) = e.data().as_string() {
             let parsed = parser::parse_lines(&txt);
             let commands = generator::generate_commands(parsed);
+            execute_commands(commands.clone());
             append_commands_and_draw(commands);
             console_log!("Received commands: ", txt);
         }
@@ -184,9 +201,14 @@ fn attach_canvas_handlers(app_handle: AppHandle) {
             let _ = c.set_pointer_capture(ev.pointer_id());
             let mut app = h.borrow_mut();
             app.is_panning = true;
-            app.last_pointer = Some(Point2D { x: ev.client_x() as f64, y: ev.client_y() as f64});
+            app.last_pointer = Some(Point2D {
+                x: ev.client_x() as f64,
+                y: ev.client_y() as f64,
+            });
         });
-        canvas.add_event_listener_with_callback("pointerdown", cb.as_ref().unchecked_ref()).unwrap();
+        canvas
+            .add_event_listener_with_callback("pointerdown", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
 
@@ -195,19 +217,26 @@ fn attach_canvas_handlers(app_handle: AppHandle) {
         let h = app_handle.clone();
         let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |ev: PointerEvent| {
             let mut app = h.borrow_mut();
-            if !app.is_panning { return; }
+            if !app.is_panning {
+                return;
+            }
             if let Some(last) = app.last_pointer.take() {
                 let dx = ev.client_x() as f64 - last.x;
                 let dy = ev.client_y() as f64 - last.y;
                 app.camera.x -= dx / app.camera.scale;
                 app.camera.y += dy / app.camera.scale;
-                app.last_pointer = Some(Point2D { x: ev.client_x() as f64, y: ev.client_y() as f64});
+                app.last_pointer = Some(Point2D {
+                    x: ev.client_x() as f64,
+                    y: ev.client_y() as f64,
+                });
                 app.dirty = true;
                 // redraw immediately
                 draw_scene_locked(&mut app);
             }
         });
-        canvas.add_event_listener_with_callback("pointermove", cb.as_ref().unchecked_ref()).unwrap();
+        canvas
+            .add_event_listener_with_callback("pointermove", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
 
@@ -221,8 +250,12 @@ fn attach_canvas_handlers(app_handle: AppHandle) {
             app.is_panning = false;
             app.last_pointer = None;
         });
-        canvas.add_event_listener_with_callback("pointerup", cb.as_ref().unchecked_ref()).unwrap();
-        canvas.add_event_listener_with_callback("pointercancel", cb.as_ref().unchecked_ref()).unwrap();
+        canvas
+            .add_event_listener_with_callback("pointerup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        canvas
+            .add_event_listener_with_callback("pointercancel", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
 
@@ -361,8 +394,12 @@ fn draw_grid(app: &mut AppState) {
     let cw = app.canvas.width() as f64;
     let ch = app.canvas.height() as f64;
 
-    let top_left = app.camera.world_to_point(Point2D { x: 0.0, y: 0.0 }, cw as u32, ch as u32);
-    let bottom_right = app.camera.world_to_point(Point2D { x: cw as f64, y: ch as f64 }, cw as u32, ch as u32);
+    let top_left = app
+        .camera
+        .world_to_point(Point2D { x: 0.0, y: 0.0 }, cw as u32, ch as u32);
+    let bottom_right = app
+        .camera
+        .world_to_point(Point2D { x: cw, y: ch }, cw as u32, ch as u32);
 
     let min_x = top_left.x.min(bottom_right.x);
     let max_x = top_left.x.max(bottom_right.x);
@@ -385,8 +422,12 @@ fn draw_grid(app: &mut AppState) {
 
     for i in start_ix..=end_ix {
         let x = i as f64 * spacing;
-        let p1 = app.camera.world_to_pixel(Point2D {x, y:min_y}, cw as u32, ch as u32);
-        let p2 = app.camera.world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
+        let p1 = app
+            .camera
+            .world_to_pixel(Point2D { x, y: min_y }, cw as u32, ch as u32);
+        let p2 = app
+            .camera
+            .world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
         app.ctx.move_to(p1.x, p1.y);
         app.ctx.line_to(p2.x, p2.y);
     }
@@ -395,8 +436,12 @@ fn draw_grid(app: &mut AppState) {
     let end_jy = (max_y / spacing).ceil() as i64;
     for j in start_jy..=end_jy {
         let y = j as f64 * spacing;
-        let p1 = app.camera.world_to_pixel(Point2D {x: min_x, y}, cw as u32, ch as u32);
-        let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
+        let p1 = app
+            .camera
+            .world_to_pixel(Point2D { x: min_x, y }, cw as u32, ch as u32);
+        let p2 = app
+            .camera
+            .world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
         app.ctx.move_to(p1.x, p1.y);
         app.ctx.line_to(p2.x, p2.y);
     }
@@ -414,8 +459,12 @@ fn draw_grid(app: &mut AppState) {
     for i in start_ix..=end_ix {
         if (i % (major_every as i64)) == 0 {
             let x = i as f64 * spacing;
-            let p1 = app.camera.world_to_pixel(Point2D { x, y: min_y }, cw as u32, ch as u32);
-            let p2 = app.camera.world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
+            let p1 = app
+                .camera
+                .world_to_pixel(Point2D { x, y: min_y }, cw as u32, ch as u32);
+            let p2 = app
+                .camera
+                .world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
             app.ctx.move_to(p1.x, p1.y);
             app.ctx.line_to(p2.x, p2.y);
         }
@@ -424,8 +473,12 @@ fn draw_grid(app: &mut AppState) {
     for j in start_jy..=end_jy {
         if (j % (major_every as i64)) == 0 {
             let y = j as f64 * spacing;
-            let p1 = app.camera.world_to_pixel(Point2D { x: min_x, y }, cw as u32, ch as u32);
-            let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
+            let p1 = app
+                .camera
+                .world_to_pixel(Point2D { x: min_x, y }, cw as u32, ch as u32);
+            let p2 = app
+                .camera
+                .world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
             app.ctx.move_to(p1.x, p1.y);
             app.ctx.line_to(p2.x, p2.y);
         }
@@ -435,40 +488,46 @@ fn draw_grid(app: &mut AppState) {
     app.ctx.close_path();
     app.ctx.restore();
 
-
     // draw x and y axes
     app.ctx.save();
     app.ctx.begin_path();
     app.ctx.set_line_width(1.0);
-    
+
     // x axis
     app.ctx.set_stroke_style_str("#ff0000");
     if min_y <= 0.0 && max_y >= 0.0 {
-        let p1 = app.camera.world_to_pixel(Point2D { x: min_x, y: 0.0 }, cw as u32, ch as u32);
-        let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y: 0.0 }, cw as u32, ch as u32);
+        let p1 = app
+            .camera
+            .world_to_pixel(Point2D { x: min_x, y: 0.0 }, cw as u32, ch as u32);
+        let p2 = app
+            .camera
+            .world_to_pixel(Point2D { x: max_x, y: 0.0 }, cw as u32, ch as u32);
         app.ctx.move_to(p1.x, p1.y);
         app.ctx.line_to(p2.x, p2.y);
     }
-    
+
     app.ctx.stroke();
     app.ctx.close_path();
 
     app.ctx.begin_path();
-    
+
     // y axis
     app.ctx.set_stroke_style_str("#00ff00");
     if min_x <= 0.0 && max_x >= 0.0 {
-        let p1 = app.camera.world_to_pixel(Point2D { x: 0.0, y: min_y }, cw as u32, ch as u32);
-        let p2 = app.camera.world_to_pixel(Point2D { x: 0.0, y: max_y }, cw as u32, ch as u32);
+        let p1 = app
+            .camera
+            .world_to_pixel(Point2D { x: 0.0, y: min_y }, cw as u32, ch as u32);
+        let p2 = app
+            .camera
+            .world_to_pixel(Point2D { x: 0.0, y: max_y }, cw as u32, ch as u32);
         app.ctx.move_to(p1.x, p1.y);
         app.ctx.line_to(p2.x, p2.y);
     }
-    
+
     app.ctx.stroke();
     app.ctx.close_path();
 
     app.ctx.restore();
-
 }
 
 #[wasm_bindgen(start)]
