@@ -41,7 +41,7 @@ Types of parameters:
   - Default: `black`
 - other: String or identifier (e.g. `my_shape`, `main_canvas`)
 
-### Frames
+### Frames (not yet implemented)
 
 Frames are coordinate systems that can be defined relative to other frames.
 Default frame is `world`.
@@ -70,7 +70,7 @@ frame select <name>
 
 - `<name>`: Name of the frame to select.
 
-### Canvas
+### Canvas (not yet implemented)
 
 Canvas is the main drawing area where all visual elements are rendered.
 Creating a new render is like opening a new drawing window.
@@ -88,7 +88,7 @@ canvas <name>
 - If the canvas with the specified name does not exist, it will be created and selected.
 - If it already exists, it will be selected for subsequent drawing commands.
 
-### Layers
+### Layers (not yet implemented)
 
 Layers are used to organize the vertical order of visual elements within a canvas.
 
@@ -105,7 +105,7 @@ layer <name>
 - If the layer with the specified name does not exist within the current canvas, it will be created and selected.
 - If it already exists, it will be selected for subsequent drawing commands.
 
-### Shapes
+### Shapes (not yet implemented)
 
 Shapes are reusable geometric objects that can be drawn multiple times in the scene.
 
@@ -132,7 +132,7 @@ shape <name> circle x=<float> y=<float> r=<float> [color=<color>] [thickness=<fl
 
 You can add multiple primitives to the same shape by repeating the `shape <name> <primitive>` command.
 
-### Entity
+### Entity (not yet implemented)
 
 Entities are movable objects in the scene that can be referenced and manipulated.
 
@@ -174,20 +174,27 @@ Draw a primitive or a shape directly onto the current layer.
 
 ```js
 draw <primitive> <...parameters>
-draw <shape_name>
 ```
 
-#### Primitive Types
+##### Primitive Types
 
 - `line`: Draw a line segment.
-  - Parameters: `x1=<float> y1=<float> x2=<float> y2=<float> [color=<color>] [thickness=<float>]`
+  - Parameters: `x1=<float> y1=<float> x2=<float> y2=<float> [stroke_color=<color>] [stroke_width=<float>]`
   - Description: Draws a line from point `(x1, y1)` to point `(x2, y2)`.
 - `circle`: Draw a circle.
-  - Parameters: `x=<float> y=<float> r=<float> [color=<color>] [thickness=<float>]`
+  - Parameters: `x=<float> y=<float> r=<float> [stroke_color=<color>] [stroke_width=<float>] [fill_color=<color>]`
   - Description: Draws a circle centered at `(x, y)` with radius `r`.
 - `rectangle`: Draw a rectangle.
-  - Parameters: `x=<float> y=<float> w=<float> h=<float> [color=<color>] [thickness=<float>]`
+  - Parameters: `x=<float> y=<float> w=<float> h=<float> [stroke_color=<color>] [stroke_width=<float>] [fill_color=<color>]`
   - Description: Draws a rectangle with the top-left corner at `(x, y)`, with specified width and height.
 - `polygon`: Draw a polygon.
-  - Parameters: `points=[(x1,y1),(x2,y2),...] [color=<color>] [thickness=<float>]`
+  - Parameters: `points=[(x1,y1),(x2,y2),...] [stroke_color=<color>] [stroke_width=<float>]`
   - Description: Draws a polygon defined by a list of points.
+
+### Draw a Shape (not yet implemented)
+
+Draw a predefined shape onto the current layer.
+
+```js
+draw <shape_name>
+```

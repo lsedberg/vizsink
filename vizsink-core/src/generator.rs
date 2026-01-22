@@ -17,8 +17,34 @@ pub enum Command {
     Effect(EffectCommand),
 }
 
+impl From<RenderCommand> for Command {
+    fn from(render_command: RenderCommand) -> Self {
+        Command::Render(render_command)
+    }
+}
+
+impl From<EffectCommand> for Command {
+    fn from(effect_command: EffectCommand) -> Self {
+        Command::Effect(effect_command)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum RenderCommand {
+    /// Draws and arc centered at (x, y) with a radius. The path starts at start_angle, ends at end_angle.
+    /// Travels counter clockwise if counter_clockwise is true, else clockwise.
+    ///
+    /// Calls `ctx.arc(x, y, radius, startAngle, endAngle, counterclockwise)`
+    ///
+    /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/arc)
+    Arc {
+        center: Point2D,
+        radius: f64,
+        angle_start: f64,
+        angle_end: f64,
+        ccw: bool,
+    },
+
     /// Initiates a stroke.
     ///
     /// Calls `ctx.stroke()`
@@ -53,6 +79,20 @@ pub enum RenderCommand {
     ///
     /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/closePath)
     ClosePath,
+
+    /// Sets the color of fill.
+    ///
+    /// Uses `ctx.fillStyle`
+    ///
+    /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/fillStyle)
+    FillColor(String),
+
+    /// Fills the current path.
+    ///
+    /// Uses `ctx.fill`
+    ///
+    /// [MDN reference](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/fill)
+    Fill,
 
     /// Move the cursor to model coordinates.
     ///
@@ -126,6 +166,7 @@ impl Frame {
             y: s * frame_point.x + c * frame_point.y + self.y,
         }
     }
+
     fn world_to_frame(&self, world_point: Point2D) -> Point2D {
         // Undo translation, then rotate by -yaw.
         let dx = world_point.x - self.x;
@@ -136,6 +177,24 @@ impl Frame {
             y: -s * dx + c * dy,
         }
     }
+}
+
+/// Append a mixed list of RenderCommand and EffectCommand values.
+/// Usage:
+/// ```
+/// append_cmds!(commands, [
+///     RenderCommand::Save,
+///     RenderCommand::BeginPath,
+///     EffectCommand:ConsoleLog("hello".into()),
+///     RenderCommand::Stroke,
+/// ]);
+/// ```
+macro_rules! append_cmds {
+    ($vec:expr, [ $($cmd:expr),* $(,)? ]) => {
+        $(
+            $vec.push(::std::convert::Into::<Command>::into($cmd));
+        )*
+    };
 }
 
 pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
@@ -167,8 +226,8 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                         y1,
                         x2,
                         y2,
-                        color,
-                        thickness,
+                        stroke_color: color,
+                        stroke_width: thickness,
                     } => {
                         let line_start_world =
                             current_frame.frame_to_world(Point2D { x: x1, y: y1 });
@@ -182,43 +241,84 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                             None => DEFAULT_STROKE_WIDTH,
                         };
 
-                        commands.append(&mut vec![
-                            Command::Render(RenderCommand::Save),
-                            Command::Render(RenderCommand::BeginPath),
-                            Command::Render(RenderCommand::StrokeStyle(color)),
-                            Command::Render(RenderCommand::LineWidth(thickness)),
-                            Command::Render(RenderCommand::MoveTo(line_start_world)),
-                            Command::Render(RenderCommand::LineTo(line_end_world)),
-                            Command::Render(RenderCommand::Stroke),
-                            Command::Render(RenderCommand::Restore),
-                        ]);
+                        append_cmds!(
+                            commands,
+                            [
+                                RenderCommand::Save,
+                                RenderCommand::BeginPath,
+                                RenderCommand::StrokeStyle(color),
+                                RenderCommand::LineWidth(thickness),
+                                RenderCommand::MoveTo(line_start_world),
+                                RenderCommand::LineTo(line_end_world),
+                                RenderCommand::Stroke,
+                                RenderCommand::Restore,
+                            ]
+                        );
                     }
                     ast::Primitive::Circle {
                         x,
                         y,
                         r,
-                        color,
-                        thickness,
-                    } => todo!(),
+                        stroke_color,
+                        stroke_width,
+                        fill_color,
+                    } => {
+                        let circle_center = current_frame.frame_to_world(Point2D { x, y });
+                        let stroke_color = match stroke_color {
+                            Some(value) => value,
+                            None => DEFAULT_STROKE_COLOR.to_string(),
+                        };
+                        let stroke_width = match stroke_width {
+                            Some(value) => value,
+                            None => DEFAULT_STROKE_WIDTH,
+                        };
+
+                        append_cmds!(
+                            commands,
+                            [
+                                RenderCommand::Save,
+                                RenderCommand::BeginPath,
+                                RenderCommand::StrokeStyle(stroke_color),
+                                RenderCommand::LineWidth(stroke_width),
+                                RenderCommand::Arc {
+                                    center: circle_center,
+                                    radius: r,
+                                    angle_start: 0.0,
+                                    angle_end: std::f64::consts::TAU,
+                                    ccw: false,
+                                },
+                            ]
+                        );
+                        if let Some(fill_color) = fill_color {
+                            append_cmds!(
+                                commands,
+                                [RenderCommand::FillColor(fill_color), RenderCommand::Fill]
+                            );
+                        }
+
+                        if stroke_width != 0.0 {
+                            commands.push(RenderCommand::Stroke.into());
+                        }
+                    }
                     ast::Primitive::Rectangle {
                         x,
                         y,
                         w,
                         h,
-                        color,
-                        thickness,
+                        stroke_color: color,
+                        stroke_width: thickness,
                     } => todo!(),
                     ast::Primitive::Polygon {
                         points,
-                        color,
-                        thickness,
+                        stroke_color: color,
+                        stroke_width: thickness,
                     } => todo!(),
                 },
                 ast::DrawNode::Shape(_) => todo!(),
             },
-            ASTNode::Error(error_node) => commands.push(Command::Effect(
-                EffectCommand::ConsoleError(format!("{:?}", error_node)),
-            )),
+            ASTNode::Error(error_node) => {
+                commands.push(EffectCommand::ConsoleError(format!("{:?}", error_node)).into())
+            }
             ASTNode::Nop => todo!(),
         }
     }
@@ -234,8 +334,8 @@ fn test_generation() {
             y1: 2.0,
             x2: 3.0,
             y2: 4.0,
-            color: Some("red".to_string()),
-            thickness: Some(4.0),
+            stroke_color: Some("red".to_string()),
+            stroke_width: Some(4.0),
         },
     ))];
 

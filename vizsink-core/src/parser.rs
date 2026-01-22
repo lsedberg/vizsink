@@ -218,7 +218,7 @@ fn parse_primitive_line(tokens: Vec<Token>) -> Vec<ASTNode> {
         }
     };
 
-    let color = match parse_optional::<String>(&params, "color") {
+    let color = match parse_optional::<String>(&params, "stroke_color") {
         Ok(v) => v,
         Err(e) => {
             ast::push_err(&mut nodes, format!("line: {}", e));
@@ -226,7 +226,7 @@ fn parse_primitive_line(tokens: Vec<Token>) -> Vec<ASTNode> {
         }
     };
 
-    let thickness = match parse_optional::<Float>(&params, "thickness") {
+    let thickness = match parse_optional::<Float>(&params, "stroke_width") {
         Ok(v) => v,
         Err(e) => {
             ast::push_err(&mut nodes, format!("line: {}", e));
@@ -240,8 +240,8 @@ fn parse_primitive_line(tokens: Vec<Token>) -> Vec<ASTNode> {
             y1,
             x2,
             y2,
-            color,
-            thickness,
+            stroke_color: color,
+            stroke_width: thickness,
         },
     )));
 
@@ -249,7 +249,70 @@ fn parse_primitive_line(tokens: Vec<Token>) -> Vec<ASTNode> {
 }
 
 fn parse_primitive_circle(tokens: Vec<Token>) -> Vec<ASTNode> {
-    todo!()
+    let mut nodes = vec![];
+
+    let params = parse_params(tokens);
+
+    let x = match parse_required::<Float>(&params, "x") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("circle: {}", e));
+            return nodes;
+        }
+    };
+
+    let y = match parse_required::<Float>(&params, "y") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("circle: {}", e));
+            return nodes;
+        }
+    };
+
+    let r = match parse_required::<Float>(&params, "r") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("circle: {}", e));
+            return nodes;
+        }
+    };
+
+    let stroke_color = match parse_optional::<String>(&params, "stroke_color") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let stroke_width = match parse_optional::<Float>(&params, "stroke_width") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    let fill_color = match parse_optional::<String>(&params, "fill_color") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("line: {}", e));
+            return nodes;
+        }
+    };
+
+    nodes.push(ASTNode::Draw(ast::DrawNode::Primitive(
+        ast::Primitive::Circle {
+            x,
+            y,
+            r,
+            stroke_color,
+            stroke_width,
+            fill_color,
+        },
+    )));
+
+    nodes
 }
 
 fn parse_draw_shape(name: &str, tokens: Vec<Token>) -> Vec<ASTNode> {

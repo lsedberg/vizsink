@@ -105,6 +105,26 @@ fn draw_scene_locked(app: &mut AppState) {
                 }
                 RenderCommand::Save => app.ctx.save(),
                 RenderCommand::Restore => app.ctx.restore(),
+                RenderCommand::Arc {
+                    center,
+                    radius,
+                    angle_start,
+                    angle_end,
+                    ccw,
+                } => {
+                    let center_px = app.camera.world_to_pixel(*center, cw as u32, ch as u32);
+                    let radius_px = app.camera.world_length_to_pixels(*radius);
+                    let _ = app.ctx.arc_with_anticlockwise(
+                        center_px.x,
+                        center_px.y,
+                        radius_px,
+                        *angle_start,
+                        *angle_end,
+                        *ccw,
+                    );
+                }
+                RenderCommand::FillColor(fill_color) => app.ctx.set_fill_style_str(fill_color),
+                RenderCommand::Fill => app.ctx.fill(),
             },
             Command::Effect(_) => {}
         }
