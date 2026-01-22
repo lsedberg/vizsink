@@ -1,3 +1,4 @@
+use core::f64;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -27,15 +28,8 @@ struct AppState {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
     camera: Camera,
+
     // Movement
-    // TODO:
-    // TODO:
-    // TODO:
-    // TODO:
-    // TODO:
-    // TODO:
-    // TODO:
-    // TODO:, should this be in camera?
 
     // Camera Movement
     is_panning: bool,
@@ -84,6 +78,9 @@ fn draw_scene_locked(app: &mut AppState) {
     let cw = app.canvas.width() as f64;
     let ch = app.canvas.height() as f64;
     app.ctx.clear_rect(0.0, 0.0, cw, ch);
+
+    // draw background
+    draw_grid(app);
 
     // replay all commands
     for command in &app.commands {
@@ -317,6 +314,161 @@ impl Camera {
         self.y = 0.0;
         self.scale = 10.0;
     }
+}
+
+/// Picks a world-space grid spacing and how many minor steps per major.
+fn grid_spacing_for_scale(scale: f64) -> (f64, usize) {
+    let target_px = 50.0_f64;
+    let mut desired_world = target_px / scale;
+    if desired_world <= 0.0 {
+        desired_world = 1.0;
+    }
+
+    // candidate bases [1,2,5] * 10^exp
+    let exp = desired_world.abs().log10().floor() as i32;
+    let mut best = (10f64.powi(exp), 5usize);
+    let bases = [1.0];
+    let mut best_diff = f64::INFINITY;
+
+    for b in &bases {
+        let cand = b * 10f64.powi(exp);
+        let diff = (cand - desired_world).abs();
+        if diff < best_diff {
+            best_diff = diff;
+            best = (cand, 10);
+        }
+    }
+
+    for delta in [-1, 1] {
+        let e = exp + delta;
+        for b in &bases {
+            let cand = b * 10f64.powi(e);
+            let diff = (cand - desired_world).abs();
+            if diff < best_diff {
+                best_diff = diff;
+                best = (cand, 10);
+            }
+        }
+    }
+
+    // minor -> return spacing, and number of minors per major (use 5)
+    (best.0, 10)
+}
+
+/// Draw an "infinite" grid by drawing lines across the visible world bounds.
+/// Minor and major lines are drawn; axis (x=0, y=0
+fn draw_grid(app: &mut AppState) {
+    let cw = app.canvas.width() as f64;
+    let ch = app.canvas.height() as f64;
+
+    let top_left = app.camera.world_to_point(Point2D { x: 0.0, y: 0.0 }, cw as u32, ch as u32);
+    let bottom_right = app.camera.world_to_point(Point2D { x: cw as f64, y: ch as f64 }, cw as u32, ch as u32);
+
+    let min_x = top_left.x.min(bottom_right.x);
+    let max_x = top_left.x.max(bottom_right.x);
+    let min_y = top_left.y.min(bottom_right.y);
+    let max_y = top_left.y.max(bottom_right.y);
+
+    let (spacing, major_every) = grid_spacing_for_scale(app.camera.scale);
+    if spacing <= 0.0 {
+        return;
+    }
+
+    // draw minor lines
+    app.ctx.save();
+    app.ctx.begin_path();
+    app.ctx.set_stroke_style_str("#e6e6e6");
+    app.ctx.set_line_width(1.0);
+
+    let start_ix = (min_x / spacing).floor() as i64;
+    let end_ix = (max_x / spacing).ceil() as i64;
+
+    for i in start_ix..=end_ix {
+        let x = i as f64 * spacing;
+        let p1 = app.camera.world_to_pixel(Point2D {x, y:min_y}, cw as u32, ch as u32);
+        let p2 = app.camera.world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
+        app.ctx.move_to(p1.x, p1.y);
+        app.ctx.line_to(p2.x, p2.y);
+    }
+
+    let start_jy = (min_y / spacing).floor() as i64;
+    let end_jy = (max_y / spacing).ceil() as i64;
+    for j in start_jy..=end_jy {
+        let y = j as f64 * spacing;
+        let p1 = app.camera.world_to_pixel(Point2D {x: min_x, y}, cw as u32, ch as u32);
+        let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
+        app.ctx.move_to(p1.x, p1.y);
+        app.ctx.line_to(p2.x, p2.y);
+    }
+
+    app.ctx.stroke();
+    app.ctx.close_path();
+    app.ctx.restore();
+
+    // draw major lines
+    app.ctx.save();
+    app.ctx.begin_path();
+    app.ctx.set_stroke_style_str("#cfcfcf");
+    app.ctx.set_line_width(1.5);
+
+    for i in start_ix..=end_ix {
+        if (i % (major_every as i64)) == 0 {
+            let x = i as f64 * spacing;
+            let p1 = app.camera.world_to_pixel(Point2D { x, y: min_y }, cw as u32, ch as u32);
+            let p2 = app.camera.world_to_pixel(Point2D { x, y: max_y }, cw as u32, ch as u32);
+            app.ctx.move_to(p1.x, p1.y);
+            app.ctx.line_to(p2.x, p2.y);
+        }
+    }
+
+    for j in start_jy..=end_jy {
+        if (j % (major_every as i64)) == 0 {
+            let y = j as f64 * spacing;
+            let p1 = app.camera.world_to_pixel(Point2D { x: min_x, y }, cw as u32, ch as u32);
+            let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y }, cw as u32, ch as u32);
+            app.ctx.move_to(p1.x, p1.y);
+            app.ctx.line_to(p2.x, p2.y);
+        }
+    }
+
+    app.ctx.stroke();
+    app.ctx.close_path();
+    app.ctx.restore();
+
+
+    // draw x and y axes
+    app.ctx.save();
+    app.ctx.begin_path();
+    app.ctx.set_line_width(1.0);
+    
+    // x axis
+    app.ctx.set_stroke_style_str("#ff0000");
+    if min_y <= 0.0 && max_y >= 0.0 {
+        let p1 = app.camera.world_to_pixel(Point2D { x: min_x, y: 0.0 }, cw as u32, ch as u32);
+        let p2 = app.camera.world_to_pixel(Point2D { x: max_x, y: 0.0 }, cw as u32, ch as u32);
+        app.ctx.move_to(p1.x, p1.y);
+        app.ctx.line_to(p2.x, p2.y);
+    }
+    
+    app.ctx.stroke();
+    app.ctx.close_path();
+
+    app.ctx.begin_path();
+    
+    // y axis
+    app.ctx.set_stroke_style_str("#00ff00");
+    if min_x <= 0.0 && max_x >= 0.0 {
+        let p1 = app.camera.world_to_pixel(Point2D { x: 0.0, y: min_y }, cw as u32, ch as u32);
+        let p2 = app.camera.world_to_pixel(Point2D { x: 0.0, y: max_y }, cw as u32, ch as u32);
+        app.ctx.move_to(p1.x, p1.y);
+        app.ctx.line_to(p2.x, p2.y);
+    }
+    
+    app.ctx.stroke();
+    app.ctx.close_path();
+
+    app.ctx.restore();
+
 }
 
 #[wasm_bindgen(start)]
