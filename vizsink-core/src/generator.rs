@@ -77,7 +77,7 @@ pub enum Command {
     ConsoleWarn(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Point2D {
     pub x: Number,
     pub y: Number,
@@ -121,6 +121,9 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
     };
 
     let current_frame = frame_main;
+
+    // TODO: Add multiple frames.
+    // let frames = HashMap::<String, Frame>::new();
 
     for node in ast {
         match node {

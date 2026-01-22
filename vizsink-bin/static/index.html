@@ -10,7 +10,7 @@
     <h1>VizSink</h1>
     <p>Status: <span id="connection-status">Disconnected</span></p>
     <div>
-      <canvas id="canvas-main" width="400px" height="600px"></canvas>
+      <canvas id="canvas-main" width="800px" height="600px"></canvas>
     </div>
     <button id="connect-btn">Refresh Page</button>
     <script type="module">
@@ -25,5 +25,11 @@
 
       run();
     </script>
+    <style>
+      #canvas-main {
+        border: 1px solid black;
+        border-radius: 4px;
+      }
+    </style>
   </body>
 </html>

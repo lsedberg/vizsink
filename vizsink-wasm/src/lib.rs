@@ -1,14 +1,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use vizsink_core::ast::Primitive;
 use vizsink_core::generator;
 use vizsink_core::generator::Command;
 use vizsink_core::generator::Point2D;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
-use web_sys::Event;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MessageEvent, WebSocket};
+use web_sys::Document;
+use web_sys::{
+    CanvasRenderingContext2d, HtmlCanvasElement, MessageEvent, PointerEvent, WebSocket, WheelEvent,
+};
 
 use vizsink_core::parser;
 
@@ -22,13 +23,247 @@ thread_local! {
 }
 
 struct AppState {
+    document: Document,
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
     camera: Camera,
+    // Movement
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:, should this be in camera?
+
+    // Camera Movement
+    is_panning: bool,
+    last_pointer: Option<Point2D>,
+
+    // scene / command buffer
+    // TODO: separate between draw commands that must be redrawn, and other more persistent commands such as console logs.
+    commands: Vec<Command>,
+    /// dirty indicates we need to redraw
+    dirty: bool,
 }
 
-fn set_app_state(handle: AppHandle) {
-    APP_STATE.with(|s| *s.borrow_mut() = Some(handle));
+fn init_app_state(
+    document: Document,
+    canvas: HtmlCanvasElement,
+    ctx: CanvasRenderingContext2d,
+) -> AppHandle {
+    let handle = Rc::new(RefCell::new(AppState {
+        canvas,
+        ctx,
+        document,
+        camera: Camera {
+            x: 0.0,
+            y: 0.0,
+            scale: 10.0,
+        },
+        is_panning: false,
+        last_pointer: None,
+        commands: Vec::new(),
+        dirty: true,
+    }));
+    APP_STATE.with(|s| *s.borrow_mut() = Some(handle.clone()));
+    handle
+}
+
+fn mark_dirty_and_draw() {
+    with_app_state(|h| {
+        let mut app = h.borrow_mut();
+        app.dirty = true;
+        draw_scene_locked(&mut app);
+    });
+}
+
+fn draw_scene_locked(app: &mut AppState) {
+    // clear canvas
+    let cw = app.canvas.width() as f64;
+    let ch = app.canvas.height() as f64;
+    app.ctx.clear_rect(0.0, 0.0, cw, ch);
+
+    // replay all commands
+    for command in &app.commands {
+        match command {
+            Command::Stroke => app.ctx.stroke(),
+            Command::LineWidth(width) => {
+                let px = app.camera.world_length_to_pixels(*width);
+                app.ctx.set_line_width(px);
+            }
+            Command::StrokeStyle(style) => app.ctx.set_stroke_style_str(style.as_str()),
+            Command::BeginPath => app.ctx.begin_path(),
+            Command::ClosePath => app.ctx.close_path(),
+            Command::MoveTo(point2d) => {
+                let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
+                app.ctx.move_to(point_px.x, point_px.y);
+            }
+            Command::LineTo(point2d) => {
+                let point_px = app.camera.world_to_pixel(*point2d, cw as u32, ch as u32);
+                app.ctx.line_to(point_px.x, point_px.y);
+            }
+            Command::ConsoleLog(msg) => console_log!(msg),
+            Command::ConsoleError(msg) => console_error!(msg),
+            Command::ConsoleWarn(msg) => console_warn!(msg),
+        }
+    }
+
+    app.dirty = false;
+}
+
+fn draw_scene() {
+    with_app_state(|h| {
+        let mut app = h.borrow_mut();
+        draw_scene_locked(&mut app);
+    });
+}
+
+fn append_commands_and_draw(mut new_cmds: Vec<Command>) {
+    with_app_state(|h| {
+        let mut app = h.borrow_mut();
+        app.commands.append(&mut new_cmds);
+        app.dirty = true;
+        draw_scene_locked(&mut app);
+    });
+}
+
+fn setup_ws(app_handle: AppHandle, ws_url: String) {
+    let ws = WebSocket::new(&ws_url).expect("ws new failed");
+
+    // keep closure alive by forgetting
+    let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
+        if let Some(txt) = e.data().as_string() {
+            let parsed = parser::parse_lines(&txt);
+            let commands = generator::generate_commands(parsed);
+            append_commands_and_draw(commands);
+            console_log!("Received commands: ", txt);
+        }
+    });
+
+    ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+    onmessage.forget();
+
+    {
+        let app_handle = app_handle.clone();
+        let onopen = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+            let status_el = app_handle
+                .borrow_mut()
+                .document
+                .get_element_by_id("connection-status")
+                .expect("status");
+            status_el.set_inner_html("Connected");
+            console_log!("Connected")
+        });
+        ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
+        onopen.forget();
+    }
+
+    {
+        let app_handle = app_handle.clone();
+        let onclose = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+            let status_el = app_handle
+                .borrow_mut()
+                .document
+                .get_element_by_id("connection-status")
+                .expect("status");
+            status_el.set_inner_html("Disconnected");
+            console_error!("Connection Lost")
+        });
+        ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
+        onclose.forget();
+    }
+}
+
+fn attach_canvas_handlers(app_handle: AppHandle) {
+    let canvas = app_handle.borrow().canvas.clone();
+
+    // pointer down
+    {
+        let h = app_handle.clone();
+        let c = canvas.clone();
+        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |ev: PointerEvent| {
+            let _ = c.set_pointer_capture(ev.pointer_id());
+            let mut app = h.borrow_mut();
+            app.is_panning = true;
+            app.last_pointer = Some(Point2D { x: ev.client_x() as f64, y: ev.client_y() as f64});
+        });
+        canvas.add_event_listener_with_callback("pointerdown", cb.as_ref().unchecked_ref()).unwrap();
+        cb.forget();
+    }
+
+    // pointer move
+    {
+        let h = app_handle.clone();
+        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |ev: PointerEvent| {
+            let mut app = h.borrow_mut();
+            if !app.is_panning { return; }
+            if let Some(last) = app.last_pointer.take() {
+                let dx = ev.client_x() as f64 - last.x;
+                let dy = ev.client_y() as f64 - last.y;
+                app.camera.x -= dx / app.camera.scale;
+                app.camera.y += dy / app.camera.scale;
+                app.last_pointer = Some(Point2D { x: ev.client_x() as f64, y: ev.client_y() as f64});
+                app.dirty = true;
+                // redraw immediately
+                draw_scene_locked(&mut app);
+            }
+        });
+        canvas.add_event_listener_with_callback("pointermove", cb.as_ref().unchecked_ref()).unwrap();
+        cb.forget();
+    }
+
+    // pointer up / cancel
+    {
+        let h = app_handle.clone();
+        let c = canvas.clone();
+        let cb = Closure::<dyn FnMut(PointerEvent)>::new(move |ev: PointerEvent| {
+            let _ = c.release_pointer_capture(ev.pointer_id());
+            let mut app = h.borrow_mut();
+            app.is_panning = false;
+            app.last_pointer = None;
+        });
+        canvas.add_event_listener_with_callback("pointerup", cb.as_ref().unchecked_ref()).unwrap();
+        canvas.add_event_listener_with_callback("pointercancel", cb.as_ref().unchecked_ref()).unwrap();
+        cb.forget();
+    }
+
+    // wheel, zoom on cursor
+    {
+        let handle = app_handle.clone();
+        let c = canvas.clone();
+        let cb = Closure::<dyn FnMut(WheelEvent)>::new(move |ev: WheelEvent| {
+            ev.prevent_default();
+            let rect = c.get_bounding_client_rect();
+            let px = ev.client_x() as f64 - rect.left();
+            let py = ev.client_y() as f64 - rect.top();
+            let cw = c.width() as f64;
+            let ch = c.height() as f64;
+
+            let mut app = handle.borrow_mut();
+            let scale_old = app.camera.scale;
+            let zoom_in = ev.delta_y() < 0.0;
+            let factor = if zoom_in { 1.1 } else { 0.9 };
+
+            // Todo move constants to global const
+            let scale_new = (scale_old * factor).clamp(0.01, 1e6);
+
+            // keep world point under cursor stationary
+            let inv_old = 1.0 / scale_old;
+            let inv_new = 1.0 / scale_new;
+            app.camera.x += (px - cw / 2.0) * (inv_old - inv_new);
+            app.camera.y += (ch / 2.0 - py) * (inv_old - inv_new);
+            app.camera.scale = scale_new;
+
+            app.dirty = true;
+            draw_scene_locked(&mut app);
+        });
+        canvas
+            .add_event_listener_with_callback("wheel", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
 }
 
 fn with_app_state<F, R>(f: F) -> Option<R>
@@ -75,6 +310,13 @@ impl Camera {
     fn pixels_to_world_length(&self, pixel_length: f64) -> f64 {
         pixel_length / self.scale
     }
+
+    /// Reset camera position and zoom/scale.
+    fn reset(&mut self) {
+        self.x = 0.0;
+        self.y = 0.0;
+        self.scale = 10.0;
+    }
 }
 
 #[wasm_bindgen(start)]
@@ -100,93 +342,19 @@ pub fn start() {
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context should be CanvasRenderingContext2d");
 
-    let app_state = Rc::new(RefCell::new(AppState {
-        canvas,
-        ctx,
-        camera: Camera {
-            x: 0.0,
-            y: 0.0,
-            scale: 10.0,
-        },
-    }));
-    APP_STATE.with(|s| *s.borrow_mut() = Some(app_state.clone()));
+    let app = init_app_state(document.clone(), canvas.clone(), ctx);
+    attach_canvas_handlers(app.clone());
 
     let location = window.location();
     let ws_url = format!(
         "ws://{}/ws",
         &location.host().expect("window should have a host location")
     );
-    let ws = WebSocket::new(&ws_url).unwrap();
+    // let ws = WebSocket::new(&ws_url).unwrap();
+    setup_ws(app.clone(), ws_url);
 
-    console_log!("Listening!");
+    // initial draw
+    draw_scene();
 
-    let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
-        if let Some(txt) = e.data().as_string() {
-            let parsed = parser::parse_lines(&txt);
-            let commands = generator::generate_commands(parsed);
-
-            console_log!("Received (", commands.len(), " commands): ", &txt);
-            execute_commands(commands);
-        }
-    });
-
-    ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
-
-    let onopen = {
-        let status_el = status_el.clone();
-        Closure::<dyn FnMut(Event)>::new(move |_| {
-            status_el.set_inner_html("Connected");
-            console_info!("Connected");
-        })
-    };
-
-    ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
-
-    let onclose = {
-        let status_el = status_el.clone();
-
-        Closure::<dyn FnMut(Event)>::new(move |_| {
-            status_el.set_inner_html("No Connection");
-            console_error!("Connection lost");
-        })
-    };
-
-    ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
-
-    // keep alive
-    onmessage.forget();
-    onopen.forget();
-    onclose.forget();
-}
-
-fn execute_commands(commands: Vec<Command>) {
-    with_app_state(|app_rc| {
-        let app = app_rc.borrow();
-        let canvas_w = app.canvas.width();
-        let canvas_h = app.canvas.height();
-        for command in commands {
-            match command {
-                Command::Stroke => app.ctx.stroke(),
-                Command::LineWidth(width) => {
-                    let px = app.camera.world_length_to_pixels(width);
-                    app.ctx.set_line_width(px);
-                }
-                Command::StrokeStyle(style) => app.ctx.set_stroke_style_str(style.as_str()),
-                Command::BeginPath => app.ctx.begin_path(),
-                Command::ClosePath => app.ctx.close_path(),
-                Command::MoveTo(point2d) => {
-                    let point_px = app.camera.world_to_pixel(point2d, canvas_w, canvas_h);
-                    app.ctx.move_to(point_px.x, point_px.y);
-                }
-                Command::LineTo(point2d) => {
-                    let point_px = app.camera.world_to_pixel(point2d, canvas_w, canvas_h);
-                    console_log!(point_px.x, point_px.y);
-                    app.ctx.line_to(point_px.x, point_px.y);
-                }
-                Command::ConsoleLog(msg) => console_log!(msg),
-                Command::ConsoleError(msg) => console_error!(msg),
-                Command::ConsoleWarn(msg) => console_warn!(msg),
-            }
-        }
-    });
+    console_log!("VizSink started!");
 }
