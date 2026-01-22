@@ -22,7 +22,7 @@ type AppHandle = Rc<RefCell<AppState>>;
 
 thread_local! {
     // global app state accessible from anywhere in this module
-    static APP_STATE: RefCell<Option<AppHandle>> = RefCell::new(None);
+    static APP_STATE: RefCell<Option<AppHandle>> = const { RefCell::new(None) }; //RefCell::new(None);
 }
 
 struct AppState {
@@ -300,7 +300,7 @@ fn with_app_state<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&AppHandle) -> R,
 {
-    APP_STATE.with(|s| s.borrow().as_ref().map(|h| f(h)))
+    APP_STATE.with(|s| s.borrow().as_ref().map(f))
 }
 
 struct Camera {
@@ -536,9 +536,6 @@ pub fn start() {
     let document = window
         .document()
         .expect("should have a document in this window");
-    let status_el = document
-        .get_element_by_id("connection-status")
-        .expect("no status element");
 
     // Canvas initialization
     let canvas = document

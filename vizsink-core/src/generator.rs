@@ -119,14 +119,14 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn to_world(&self, frame_point: Point2D) -> Point2D {
+    fn frame_to_world(&self, frame_point: Point2D) -> Point2D {
         let (s, c) = self.yaw.sin_cos();
         Point2D {
             x: c * frame_point.x - s * frame_point.y + self.x,
             y: s * frame_point.x + c * frame_point.y + self.y,
         }
     }
-    fn from_world(&self, world_point: Point2D) -> Point2D {
+    fn world_to_frame(&self, world_point: Point2D) -> Point2D {
         // Undo translation, then rotate by -yaw.
         let dx = world_point.x - self.x;
         let dy = world_point.y - self.y;
@@ -170,8 +170,9 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                         color,
                         thickness,
                     } => {
-                        let line_start_world = current_frame.to_world(Point2D { x: x1, y: y1 });
-                        let line_end_world = current_frame.to_world(Point2D { x: x2, y: y2 });
+                        let line_start_world =
+                            current_frame.frame_to_world(Point2D { x: x1, y: y1 });
+                        let line_end_world = current_frame.frame_to_world(Point2D { x: x2, y: y2 });
                         let color = match color {
                             Some(value) => value,
                             None => DEFAULT_STROKE_COLOR.to_string(),
@@ -243,12 +244,14 @@ fn test_generation() {
     assert_eq!(
         commands,
         vec![
+            Command::Render(RenderCommand::Save),
             Command::Render(RenderCommand::BeginPath),
             Command::Render(RenderCommand::StrokeStyle("red".to_string())),
             Command::Render(RenderCommand::LineWidth(4.0)),
             Command::Render(RenderCommand::MoveTo(Point2D { x: 1.0, y: 2.0 })),
             Command::Render(RenderCommand::LineTo(Point2D { x: 3.0, y: 4.0 })),
             Command::Render(RenderCommand::Stroke),
+            Command::Render(RenderCommand::Restore),
         ]
     );
 }

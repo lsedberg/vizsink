@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     let addr = format!("127.0.0.1:{}", cli.port);
     let listener = tokio::net::TcpListener::bind(addr.clone())
         .await
-        .expect(format!("Could not create a listener at: {}", addr).as_str());
+        .expect("could not create listener");
 
     println!("Serving VizSink at: `{}`", addr);
     println!("Open a browser to visualize.");
@@ -89,7 +89,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
     // 1) send snapshot on connection
     {
         let cached_lines = state.cached_lines.read().await;
-        if cached_lines.len() > 0 {
+        if !cached_lines.is_empty() {
             let lines = cached_lines.join("\n");
             if socket.send(Message::Text(lines.into())).await.is_err() {
                 // client disconnected

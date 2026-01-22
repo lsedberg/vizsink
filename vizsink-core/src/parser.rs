@@ -8,10 +8,11 @@ use crate::{
 type Params = HashMap<String, String>;
 
 pub fn parse_lines(raw: &str) -> Vec<ASTNode> {
-    let mut lines = raw.lines();
+    let lines = raw.lines();
     let mut tokens = vec![];
 
-    while let Some(line) = lines.next() {
+    // while let Some(line) = lines.next() {
+    for line in lines {
         let mut line_tokens = parse_line(line);
         tokens.append(&mut line_tokens)
     }

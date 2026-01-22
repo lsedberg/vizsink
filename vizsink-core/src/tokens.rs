@@ -17,7 +17,7 @@ pub enum Token {
 pub fn tokenizer(line: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
-    let mut characters = line.chars().into_iter().peekable();
+    let mut characters = line.chars().peekable();
 
     while let Some(c) = characters.next() {
         match c {
