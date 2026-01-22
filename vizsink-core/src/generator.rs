@@ -3,10 +3,10 @@
 
 use crate::ast::{self, ASTNode};
 
-pub type Number = f64;
+pub type Float = f64;
 
 const DEFAULT_STROKE_COLOR: &str = "black";
-const DEFAULT_STROKE_WIDTH: Number = 0.10; // in natural units
+const DEFAULT_STROKE_WIDTH: Float = 0.10; // in natural units
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
@@ -29,6 +29,7 @@ impl From<EffectCommand> for Command {
     }
 }
 
+/// Commands that rerun on redraw.
 #[derive(Debug, PartialEq, Clone)]
 pub enum RenderCommand {
     /// Draws and arc centered at (x, y) with a radius. The path starts at start_angle, ends at end_angle.
@@ -127,6 +128,7 @@ pub enum RenderCommand {
     Restore,
 }
 
+/// Permanent commands that are only run when received, and *not* on every redraw of the canvas.
 #[derive(Debug, PartialEq, Clone)]
 pub enum EffectCommand {
     /// Console logs to the browser console.
@@ -147,15 +149,26 @@ pub enum EffectCommand {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Point2D {
-    pub x: Number,
-    pub y: Number,
+    pub x: Float,
+    pub y: Float,
 }
 
 pub struct Frame {
     name: String,
-    x: Number,
-    y: Number,
-    yaw: Number,
+    x: Float,
+    y: Float,
+    yaw: Float,
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Frame {
+            name: "main".into(),
+            x: 0.0,
+            y: 0.0,
+            yaw: 0.0,
+        }
+    }
 }
 
 impl Frame {
@@ -181,7 +194,7 @@ impl Frame {
 
 /// Append a mixed list of RenderCommand and EffectCommand values.
 /// Usage:
-/// ```
+/// ```rs
 /// append_cmds!(commands, [
 ///     RenderCommand::Save,
 ///     RenderCommand::BeginPath,
@@ -195,6 +208,66 @@ macro_rules! append_cmds {
             $vec.push(::std::convert::Into::<Command>::into($cmd));
         )*
     };
+}
+
+fn draw_poly_commands(
+    points: Vec<Point2D>,
+    stroke_color: Option<String>,
+    stroke_width: Option<Float>,
+    fill_color: Option<String>,
+    closed: bool,
+) -> Vec<Command> {
+    let mut commands = Vec::new();
+
+    let mut iter = points.into_iter();
+
+    let start = match iter.next() {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    let stroke_color = match stroke_color {
+        Some(value) => value,
+        None => DEFAULT_STROKE_COLOR.to_string(),
+    };
+    let stroke_width = match stroke_width {
+        Some(value) => value,
+        None => DEFAULT_STROKE_WIDTH,
+    };
+
+    append_cmds!(
+        commands,
+        [
+            RenderCommand::Save,
+            RenderCommand::BeginPath,
+            RenderCommand::StrokeStyle(stroke_color),
+            RenderCommand::LineWidth(stroke_width),
+            RenderCommand::MoveTo(start),
+        ]
+    );
+
+    for point in iter {
+        commands.push(RenderCommand::LineTo(point).into());
+    }
+
+    if closed {
+        commands.push(RenderCommand::ClosePath.into());
+    }
+
+    if let Some(fill_color) = fill_color {
+        append_cmds!(
+            commands,
+            [RenderCommand::FillColor(fill_color), RenderCommand::Fill]
+        );
+    }
+
+    if stroke_width != 0.0 {
+        commands.push(RenderCommand::Stroke.into());
+    }
+
+    append_cmds!(commands, [RenderCommand::Restore]);
+
+    commands
 }
 
 pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
@@ -226,34 +299,17 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                         y1,
                         x2,
                         y2,
-                        stroke_color: color,
-                        stroke_width: thickness,
+                        stroke_color,
+                        stroke_width,
                     } => {
-                        let line_start_world =
-                            current_frame.frame_to_world(Point2D { x: x1, y: y1 });
-                        let line_end_world = current_frame.frame_to_world(Point2D { x: x2, y: y2 });
-                        let color = match color {
-                            Some(value) => value,
-                            None => DEFAULT_STROKE_COLOR.to_string(),
-                        };
-                        let thickness = match thickness {
-                            Some(value) => value,
-                            None => DEFAULT_STROKE_WIDTH,
-                        };
-
-                        append_cmds!(
-                            commands,
-                            [
-                                RenderCommand::Save,
-                                RenderCommand::BeginPath,
-                                RenderCommand::StrokeStyle(color),
-                                RenderCommand::LineWidth(thickness),
-                                RenderCommand::MoveTo(line_start_world),
-                                RenderCommand::LineTo(line_end_world),
-                                RenderCommand::Stroke,
-                                RenderCommand::Restore,
-                            ]
+                        let mut line = draw_poly_commands(
+                            vec![Point2D { x: x1, y: y1 }, Point2D { x: x2, y: y2 }],
+                            stroke_color,
+                            stroke_width,
+                            None,
+                            false,
                         );
+                        commands.append(&mut line);
                     }
                     ast::Primitive::Circle {
                         x,
@@ -296,22 +352,39 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                             );
                         }
 
-                        if stroke_width != 0.0 {
+                        if stroke_width > 0.0 {
                             commands.push(RenderCommand::Stroke.into());
                         }
+
+                        commands.push(RenderCommand::Restore.into());
                     }
                     ast::Primitive::Rectangle {
                         x,
                         y,
                         w,
                         h,
-                        stroke_color: color,
-                        stroke_width: thickness,
-                    } => todo!(),
+                        stroke_color,
+                        stroke_width,
+                        fill_color,
+                    } => {
+                        let p1 = current_frame.frame_to_world(Point2D { x, y });
+                        let p2 = current_frame.frame_to_world(Point2D { x: x + w, y });
+                        let p3 = current_frame.frame_to_world(Point2D { x: x + w, y: y + h });
+                        let p4 = current_frame.frame_to_world(Point2D { x, y: y + h });
+
+                        let mut line = draw_poly_commands(
+                            vec![p1, p2, p3, p4, p1],
+                            stroke_color,
+                            stroke_width,
+                            fill_color,
+                            true,
+                        );
+                        commands.append(&mut line);
+                    }
                     ast::Primitive::Polygon {
                         points,
-                        stroke_color: color,
-                        stroke_width: thickness,
+                        stroke_color,
+                        stroke_width,
                     } => todo!(),
                 },
                 ast::DrawNode::Shape(_) => todo!(),
@@ -319,7 +392,7 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
             ASTNode::Error(error_node) => {
                 commands.push(EffectCommand::ConsoleError(format!("{:?}", error_node)).into())
             }
-            ASTNode::Nop => todo!(),
+            ASTNode::Nop => {}
         }
     }
 
@@ -335,7 +408,7 @@ fn test_generation() {
             x2: 3.0,
             y2: 4.0,
             stroke_color: Some("red".to_string()),
-            stroke_width: Some(4.0),
+            stroke_width: Some(0.4),
         },
     ))];
 
@@ -347,11 +420,28 @@ fn test_generation() {
             Command::Render(RenderCommand::Save),
             Command::Render(RenderCommand::BeginPath),
             Command::Render(RenderCommand::StrokeStyle("red".to_string())),
-            Command::Render(RenderCommand::LineWidth(4.0)),
+            Command::Render(RenderCommand::LineWidth(0.4)),
             Command::Render(RenderCommand::MoveTo(Point2D { x: 1.0, y: 2.0 })),
             Command::Render(RenderCommand::LineTo(Point2D { x: 3.0, y: 4.0 })),
             Command::Render(RenderCommand::Stroke),
             Command::Render(RenderCommand::Restore),
         ]
     );
+}
+
+#[test]
+fn draw_poly_test() {
+    let commands = draw_poly_commands(
+        vec![Point2D { x: 1.0, y: 2.0 }, Point2D { x: 3.0, y: 4.0 }],
+        Some("orange".into()),
+        None,
+        None,
+        false,
+    );
+    dbg!(commands);
+
+    // assert_eq!(
+    //     commands,
+    //     [Command::Render(RenderCommand::Save)]
+    // )
 }

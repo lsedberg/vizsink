@@ -31,7 +31,9 @@ pub fn tokenizer(line: &str) -> Vec<Token> {
                 if c.is_alphanumeric() || c == '_' || c == '-' {
                     let mut word = String::new();
                     word.push(c);
-                    while let Some(c) = characters.next_if(|c| c.is_alphanumeric() || c == &'_') {
+                    while let Some(c) =
+                        characters.next_if(|c| c.is_alphanumeric() || c == &'_' || c == &'.')
+                    {
                         word.push(c);
                     }
                     tokens.push(Token::Word(word))
@@ -67,7 +69,7 @@ fn test_tokenizer() {
         ]
     );
 
-    let line = "draw poly points=[(45, 2), (23,4), ( 4   ,   5)]";
+    let line = "draw poly points=[(45, 2.5), (23,4), ( 4   ,   5)]";
     let tokens = tokenizer(line);
     assert_eq!(
         tokens,
@@ -80,7 +82,7 @@ fn test_tokenizer() {
             Token::LParen,
             Token::Word("45".to_string()),
             Token::Comma,
-            Token::Word("2".to_string()),
+            Token::Word("2.5".to_string()),
             Token::RParen,
             Token::Comma,
             Token::LParen,

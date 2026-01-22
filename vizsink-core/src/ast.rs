@@ -90,6 +90,7 @@ pub enum Primitive {
         h: Float,
         stroke_color: Option<String>,
         stroke_width: Option<Float>,
+        fill_color: Option<String>,
     },
     Polygon {
         points: Vec<(Float, Float)>,
