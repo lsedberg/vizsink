@@ -122,7 +122,7 @@ pub fn start() {
 
     let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
         if let Some(txt) = e.data().as_string() {
-            let parsed = parser::parse_line(&txt);
+            let parsed = parser::parse_lines(&txt);
             let commands = generator::generate_commands(parsed);
 
             console_log!("Received (", commands.len(), " commands): ", &txt);

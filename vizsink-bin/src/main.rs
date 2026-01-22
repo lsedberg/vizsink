@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -12,8 +12,11 @@ use axum::{
 };
 use clap::Parser;
 use color_eyre::eyre::Result;
-use tokio::io::{self, AsyncBufReadExt};
 use tokio::sync::broadcast;
+use tokio::{
+    io::{self, AsyncBufReadExt},
+    sync::RwLock,
+};
 use tower_http::services::ServeDir;
 
 #[derive(Parser)]
@@ -26,6 +29,7 @@ struct Cli {
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<String>,
+    cached_lines: Arc<RwLock<Vec<String>>>,
 }
 
 #[tokio::main]
@@ -33,13 +37,20 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let (tx, _) = broadcast::channel::<String>(1024);
 
+    let app_state = AppState {
+        tx,
+        cached_lines: Arc::new(RwLock::new(Vec::new())),
+    };
+
     // stdin reader task
     {
-        let tx = tx.clone();
+        let app_state = app_state.clone();
         tokio::spawn(async move {
             let mut lines = io::BufReader::new(io::stdin()).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = tx.send(line);
+                let mut cached_lines = app_state.cached_lines.write().await;
+                cached_lines.push(line.clone());
+                let _ = app_state.tx.send(line);
             }
         });
     }
@@ -55,7 +66,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .fallback(static_service)
-        .with_state(AppState { tx });
+        .with_state(app_state);
 
     let addr = format!("127.0.0.1:{}", cli.port);
     let listener = tokio::net::TcpListener::bind(addr.clone())
@@ -75,6 +86,18 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
 }
 
 async fn handle_ws(mut socket: WebSocket, state: AppState) {
+    // 1) send snapshot on connection
+    {
+        let cached_lines = state.cached_lines.read().await;
+        if cached_lines.len() > 0 {
+            let lines = cached_lines.join("\n");
+            if socket.send(Message::Text(lines.into())).await.is_err() {
+                // client disconnected
+                return;
+            }
+        }
+        // Close cached_lines read
+    }
     let mut rx = state.tx.subscribe();
 
     while let Ok(msg) = rx.recv().await {
