@@ -6,6 +6,7 @@ pub enum ASTNode {
     Shape(ShapeNode),
     Entity(EntityNode),
     Draw(DrawNode),
+    Grid(GridNode),
     Error(ErrorNode),
     Nop,
 }
@@ -61,6 +62,16 @@ pub enum EntityNode {
 pub enum DrawNode {
     Primitive(Primitive),
     Shape(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GridNode {
+    pub name: String,
+    pub x: Float,
+    pub y: Float,
+    pub w: u32,
+    pub h: u32,
+    pub cell: Float,
 }
 
 pub type Float = f64;

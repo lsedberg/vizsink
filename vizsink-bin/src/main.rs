@@ -1,14 +1,16 @@
+use include_dir::{Dir, include_dir};
 use std::sync::Arc;
 
 use axum::{
     Router,
+    body::Body,
     extract::{
-        State,
+        Path, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, get_service},
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::get,
 };
 use clap::Parser;
 use color_eyre::eyre::Result;
@@ -17,7 +19,6 @@ use tokio::{
     io::{self, AsyncBufReadExt},
     sync::RwLock,
 };
-use tower_http::services::ServeDir;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -30,6 +31,28 @@ struct Cli {
 struct AppState {
     tx: broadcast::Sender<String>,
     cached_lines: Arc<RwLock<Vec<String>>>,
+}
+
+static STATIC_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static");
+
+async fn serve_embedded(Path(path): Path<String>) -> impl IntoResponse {
+    let path = path.trim_start_matches('/');
+    let mime_type = mime_guess::from_path(path).first_or_text_plain();
+
+    match STATIC_DIR.get_file(path) {
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap(),
+        Some(file) => Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(mime_type.as_ref()).unwrap(),
+            )
+            .body(Body::from(file.contents()))
+            .unwrap(),
+    }
 }
 
 #[tokio::main]
@@ -55,25 +78,23 @@ async fn main() -> Result<()> {
         });
     }
 
-    let static_service =
-        get_service(ServeDir::new("./vizsink-bin/static")).handle_error(|err| async move {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Static file error: {}", err),
-            )
-        });
-
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .fallback(static_service)
+        .route("/{*path}", get(serve_embedded))
         .with_state(app_state);
 
-    let addr = format!("127.0.0.1:{}", cli.port);
-    let listener = tokio::net::TcpListener::bind(addr.clone())
-        .await
-        .expect("could not create listener");
+    let addr = format!("0.0.0.0:{}", cli.port);
+    let listener = match tokio::net::TcpListener::bind(addr.clone()).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            println!("Tip: You can change the default port by using the `--port <port>` flag.");
+            std::process::exit(1);
+        }
+    };
+    // .expect("could not create listener");
 
-    println!("Serving VizSink at: `{}`", addr);
+    println!("Serving VizSink at: `{}/index.html`", addr);
     println!("Open a browser to visualize.");
 
     axum::serve(listener, app).await?;

@@ -7,6 +7,7 @@ use vizsink_core::generator::Command;
 use vizsink_core::generator::EffectCommand;
 use vizsink_core::generator::Point2D;
 use vizsink_core::generator::RenderCommand;
+use vizsink_core::parser::ParserContext;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
@@ -164,11 +165,12 @@ fn append_commands_and_draw(mut new_cmds: Vec<Command>) {
 
 fn setup_ws(app_handle: AppHandle, ws_url: String) {
     let ws = WebSocket::new(&ws_url).expect("ws new failed");
+    let mut context = ParserContext::new();
 
     // keep closure alive by forgetting
     let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
         if let Some(txt) = e.data().as_string() {
-            let parsed = parser::parse_lines(&txt);
+            let parsed = parser::parse_lines(&txt, &mut context);
             let commands = generator::generate_commands(parsed);
             execute_commands(commands.clone());
             append_commands_and_draw(commands);

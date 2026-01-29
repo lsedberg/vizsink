@@ -393,6 +393,67 @@ pub fn generate_commands(ast: Vec<ASTNode>) -> Vec<Command> {
                 commands.push(EffectCommand::ConsoleError(format!("{:?}", error_node)).into())
             }
             ASTNode::Nop => {}
+            ASTNode::Grid(grid_node) => {
+                // Draw a grid
+                commands.push(Command::Effect(EffectCommand::ConsoleLog(
+                    format!("Created a grid: {}", &grid_node.name).to_string(),
+                )));
+
+                // Draw grid
+                let size = grid_node.cell;
+
+                // Horizontal lines
+                for x in 0..grid_node.w {
+                    for y in 0..=grid_node.h {
+                        let start_x = grid_node.x + x as f64 * size;
+                        let start_y = grid_node.y + y as f64 * size;
+                        let end_x = start_x + size;
+                        let end_y = start_y;
+
+                        let mut line = draw_poly_commands(
+                            vec![
+                                Point2D {
+                                    x: start_x,
+                                    y: start_y,
+                                },
+                                Point2D { x: end_x, y: end_y },
+                            ],
+                            None,
+                            Some(size / 10.0),
+                            None,
+                            false,
+                        );
+
+                        commands.append(&mut line);
+                    }
+                }
+
+                // Verical lines
+                for x in 0..=grid_node.w {
+                    for y in 0..grid_node.h {
+                        let start_x = grid_node.x + x as f64 * size;
+                        let start_y = grid_node.y + y as f64 * size;
+                        let end_x = start_x;
+                        let end_y = start_y + size;
+
+                        let mut line = draw_poly_commands(
+                            vec![
+                                Point2D {
+                                    x: start_x,
+                                    y: start_y,
+                                },
+                                Point2D { x: end_x, y: end_y },
+                            ],
+                            None,
+                            Some(size / 10.0),
+                            None,
+                            false,
+                        );
+
+                        commands.append(&mut line);
+                    }
+                }
+            }
         }
     }
 

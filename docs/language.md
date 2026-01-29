@@ -163,6 +163,23 @@ entity move <entity_name> x=<float> y=<float> [angle=<angle>]
 - `angle`: (Optional) New orientation of the entity. If not specified, the orientation remains unchanged.
 - The entity is updated to the new position and orientation in the scene.
 
+### Grid
+
+Grids are their own coordinate frame which can be used to visualize occupancy or cost maps.
+
+#### Create a Grid
+
+Create a grid on the current layer.
+
+```js
+grid <name> x=<float> y=<float> w=<uint> h=<uint> cell=<float> 
+```
+
+- `<name>`: Name of the grid.
+- `x`, `y`: Position of the bottom-left corner of the grid in the current frame.
+- `w`, `h`: Width and height of the grid in number of cells.
+- `cell`: Size of each cell in world units.
+
 ### Drawing Primitives
 
 Drawing primitives are basic geometric shapes that can be drawn directly onto the current layer.
@@ -190,6 +207,8 @@ draw <primitive> <...parameters>
 - `polygon`: Draw a polygon.
   - Parameters: `points=[(x1,y1),(x2,y2),...] [stroke_color=<color>] [stroke_width=<float>]`
   - Description: Draws a polygon defined by a list of points.
+- `cell`: Draws a cell in a grid.
+  - Parameters: `grid=<name> x=<uint> y=<uint>`
 
 ### Draw a Shape (not yet implemented)
 

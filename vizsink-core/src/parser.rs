@@ -1,53 +1,65 @@
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{
-    ast::{self, ASTNode, Angle, CanvasNode, ErrorNode, Float, FrameNode, LayerNode},
+    ast::{self, ASTNode, Angle, CanvasNode, ErrorNode, Float, FrameNode, GridNode, LayerNode},
+    generator::Point2D,
     tokens::{Token, tokenizer},
 };
 
 type Params = HashMap<String, String>;
 
-pub fn parse_lines(raw: &str) -> Vec<ASTNode> {
+pub struct ParserContext {
+    grids: HashMap<String, Grid>,
+}
+
+impl ParserContext {
+    pub fn new() -> Self {
+        ParserContext {
+            grids: HashMap::new(),
+        }
+    }
+}
+
+pub struct Grid {
+    name: String,
+    position: Point2D,
+    cell_size: Float,
+}
+
+pub fn parse_lines(raw: &str, ctx: &mut ParserContext) -> Vec<ASTNode> {
     let lines = raw.lines();
     let mut tokens = vec![];
 
     // while let Some(line) = lines.next() {
     for line in lines {
-        let mut line_tokens = parse_line(line);
+        let mut line_tokens = parse_line(line, ctx);
         tokens.append(&mut line_tokens)
     }
 
     tokens
 }
 
-pub fn parse_line(line: &str) -> Vec<ASTNode> {
+pub fn parse_line(line: &str, ctx: &mut ParserContext) -> Vec<ASTNode> {
     let mut tokens = tokenizer(line).into_iter();
     let command = tokens.next();
     let tokens = tokens.collect();
     let mut parsed_line = match command {
-        Some(Token::Word(s)) => {
-            if s == "frame" {
-                parse_frame(tokens)
-            } else if s == "canvas" {
-                parse_canvas(tokens)
-            } else if s == "layer" {
-                parse_layer(tokens)
-            } else if s == "shape" {
-                parse_shape(tokens)
-            } else if s == "entity" {
-                parse_entity(tokens)
-            } else if s == "draw" {
-                parse_draw(tokens)
-            } else {
-                Vec::new()
-            }
-        }
+        Some(Token::Word(s)) => match s.as_str() {
+            "frame" => parse_frame(tokens),
+            "canvas" => parse_canvas(tokens),
+            "layer" => parse_layer(tokens),
+            "shape" => parse_shape(tokens),
+            "entity" => parse_entity(tokens),
+            "grid" => parse_grid(tokens, ctx),
+            "draw" => parse_draw(tokens, ctx),
+            _ => Vec::new(),
+        },
         _ => Vec::new(),
     };
 
     if parsed_line.is_empty() {
         parsed_line.push(ASTNode::Error(ErrorNode::ParseError(format!(
-            "Could not parse: {}",
+            "Could not parse: {} (empty)",
             line
         ))));
     }
@@ -158,7 +170,80 @@ fn parse_entity(tokens: Vec<Token>) -> Vec<ASTNode> {
     vec![]
 }
 
-fn parse_draw(tokens: Vec<Token>) -> Vec<ASTNode> {
+fn parse_grid(tokens: Vec<Token>, ctx: &mut ParserContext) -> Vec<ASTNode> {
+    let mut nodes = vec![];
+    let mut it = tokens.into_iter();
+
+    if let Some(Token::Word(name)) = it.next() {
+        let params = parse_params(it.collect());
+
+        let x = match parse_required::<Float>(&params, "x") {
+            Ok(v) => v,
+            Err(e) => {
+                ast::push_err(&mut nodes, format!("grid {}", e));
+                return nodes;
+            }
+        };
+
+        let y = match parse_required::<Float>(&params, "y") {
+            Ok(v) => v,
+            Err(e) => {
+                ast::push_err(&mut nodes, format!("grid {}", e));
+                return nodes;
+            }
+        };
+
+        let w = match parse_required::<u32>(&params, "w") {
+            Ok(v) => v,
+            Err(e) => {
+                ast::push_err(&mut nodes, format!("grid {e}"));
+                return nodes;
+            }
+        };
+
+        let h = match parse_required::<u32>(&params, "h") {
+            Ok(v) => v,
+            Err(e) => {
+                ast::push_err(&mut nodes, format!("grid {e}"));
+                return nodes;
+            }
+        };
+
+        let cell = match parse_required::<Float>(&params, "cell") {
+            Ok(v) => v,
+            Err(e) => {
+                ast::push_err(&mut nodes, format!("grid {e}"));
+                return nodes;
+            }
+        };
+
+        nodes.push(ASTNode::Grid(GridNode {
+            name: name.clone(),
+            x,
+            y,
+            w,
+            h,
+            cell,
+        }));
+
+        // Push grid to context
+
+        ctx.grids.insert(
+            name.clone(),
+            Grid {
+                name,
+                position: Point2D { x, y },
+                cell_size: cell,
+            },
+        );
+    } else {
+        ast::push_err(&mut nodes, "grid: no name")
+    }
+
+    nodes
+}
+
+fn parse_draw(tokens: Vec<Token>, ctx: &mut ParserContext) -> Vec<ASTNode> {
     let mut nodes = vec![];
     let mut it = tokens.into_iter();
 
@@ -169,6 +254,7 @@ fn parse_draw(tokens: Vec<Token>) -> Vec<ASTNode> {
             "line" => parse_primitive_line(tokens),
             "circle" => parse_primitive_circle(tokens),
             "rect" => parse_primitive_rectangle(tokens),
+            "cell" => parse_primitive_cell(tokens, ctx),
             // "rectangle" => parse_primitive_rectangle(),
             // "polygon" => parse_primitive_polygon(),
             s => parse_draw_shape(s, tokens),
@@ -392,6 +478,97 @@ fn parse_primitive_rectangle(tokens: Vec<Token>) -> Vec<ASTNode> {
     nodes
 }
 
+fn parse_primitive_cell(tokens: Vec<Token>, ctx: &mut ParserContext) -> Vec<ASTNode> {
+    let mut nodes = vec![];
+
+    let params = parse_params(tokens);
+
+    let x = match parse_required::<Float>(&params, "x") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {e}"));
+            return nodes;
+        }
+    };
+
+    let y = match parse_required::<Float>(&params, "y") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {e}"));
+            return nodes;
+        }
+    };
+
+    let grid_name = match parse_required::<String>(&params, "grid") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {e}"));
+            return nodes;
+        }
+    };
+
+    let stroke_color = match parse_optional::<String>(&params, "stroke_color") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {}", e));
+            return nodes;
+        }
+    };
+
+    let stroke_width = match parse_optional::<Float>(&params, "stroke_width") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {}", e));
+            return nodes;
+        }
+    };
+
+    let fill_color = match parse_optional::<String>(&params, "fill_color") {
+        Ok(v) => v,
+        Err(e) => {
+            ast::push_err(&mut nodes, format!("cell: {}", e));
+            return nodes;
+        }
+    };
+
+    let grid = match ctx.grids.get(&grid_name) {
+        Some(v) => v,
+        None => {
+            ast::push_err(&mut nodes, format!("cell: no grid with name: {grid_name}"));
+            return nodes;
+        }
+    };
+
+    // Overwrite default as we'd usually like fill, but no strokes (unless specified)
+    let fill_color = match fill_color {
+        Some(color) => color,
+        None => "black".to_string(),
+    };
+
+    let stroke_width = match stroke_width {
+        Some(color) => color,
+        None => 0.0,
+    };
+
+    let w = grid.cell_size;
+    let x_world = grid.position.x + x * w;
+    let y_world = grid.position.y + y * w;
+
+    nodes.push(ASTNode::Draw(ast::DrawNode::Primitive(
+        ast::Primitive::Rectangle {
+            x: x_world,
+            y: y_world,
+            w,
+            h: w,
+            stroke_color,
+            stroke_width: Some(stroke_width),
+            fill_color: Some(fill_color),
+        },
+    )));
+
+    nodes
+}
+
 fn parse_draw_shape(name: &str, tokens: Vec<Token>) -> Vec<ASTNode> {
     // todo!()
     vec![]
@@ -446,7 +623,7 @@ where
 #[test]
 fn test_parse_line() {
     let line = "frame set my_frame x=1 y=2 yaw=90deg";
-    let parsed = parse_line(line);
+    let parsed = parse_line(line, &mut ParserContext::new());
 
     dbg!(parsed);
 }
@@ -454,8 +631,9 @@ fn test_parse_line() {
 #[test]
 fn test_parse_lines() {
     let lines = r#"frame select my_frame
-    canvas my_canvas"#;
-    let parsed = parse_lines(lines);
+    canvas my_canvas
+    grid world x=1 y=2 w=3 h=4 cell=0.1"#;
+    let parsed = parse_lines(lines, &mut ParserContext::new());
 
     assert_eq!(
         parsed,
@@ -466,6 +644,14 @@ fn test_parse_lines() {
             ASTNode::Canvas(CanvasNode {
                 name: "my_canvas".to_string()
             }),
+            ASTNode::Grid(GridNode {
+                name: "world".to_string(),
+                x: 1.0,
+                y: 2.0,
+                w: 3,
+                h: 4,
+                cell: 0.1
+            })
         ]
     );
 
