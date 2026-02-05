@@ -660,7 +660,7 @@ fn test_parse_lines() {
 
 #[test]
 fn test_params() {
-    let params_raw = "x=4 y= 6.5 z   = -4";
+    let params_raw = "x=4 y= 6.5 z   = -4 color= #ffaa00";
     let tokens = tokenizer(params_raw);
     dbg!(&tokens);
     let params = parse_params(tokens);
@@ -668,4 +668,8 @@ fn test_params() {
     assert_eq!(parse_required::<Float>(&params, "x"), Ok(4.0));
     assert_eq!(parse_required::<Float>(&params, "y"), Ok(6.5));
     assert_eq!(parse_required::<Float>(&params, "z"), Ok(-4.0));
+    assert_eq!(
+        parse_required::<String>(&params, "color"),
+        Ok("#ffaa00".to_string())
+    )
 }

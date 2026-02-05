@@ -28,7 +28,7 @@ pub fn tokenizer(line: &str) -> Vec<Token> {
             ']' => tokens.push(Token::RBracket),
             ',' => tokens.push(Token::Comma),
             _ => {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
+                if c.is_alphanumeric() || c == '_' || c == '-' || c == '#' {
                     let mut word = String::new();
                     word.push(c);
                     while let Some(c) =
